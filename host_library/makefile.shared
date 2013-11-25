@@ -12,9 +12,9 @@ endif
 
 XSCOPE_HOST_DIR = $(ROOT)/sc_xscope_support/host_library
 
-INCLUDE += -I$(XSCOPE_HOST_DIR)
+INCLUDES += -I$(XSCOPE_HOST_DIR)
 
-SOURCES += $(XSCOPE_HOST_DIR)/xscope_host_shared.c $(APP_NAME).c
+SOURCES += $(XSCOPE_HOST_DIR)/xscope_host_shared.c
 ifeq ($(WINFLAG),1)
   SOURCES += $(XSCOPE_HOST_DIR)/getopt.c $(XSCOPE_HOST_DIR)/inet_pton.c
 endif
@@ -22,16 +22,18 @@ endif
 
 ifeq ($(WINFLAG),1)
 
+SHELL = c:\Windows\system32\cmd.exe
+
 all:
-	cl $(FLAGS) $(INCLUDE) $(SOURCES)
+	cl $(FLAGS) $(APP_NAME).c $(INCLUDES) $(SOURCES)
 
 clean:
-	del $(APP_NAME)
+	del $(APP_NAME).exe *.obj
 
 else
 
 all:
-	gcc $(FLAGS) $(INCLUDE) $(SOURCES) -o $(APP_NAME)
+	gcc $(FLAGS) $(APP_NAME).c $(INCLUDES) $(SOURCES) -o $(APP_NAME)
 
 clean:
 	rm -f $(APP_NAME)
