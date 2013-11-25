@@ -1,0 +1,39 @@
+
+ifeq ($(OS),WINDOWS)
+  WINFLAG=1
+else
+  ifeq ($(findstring Windows, $(OS)),Windows)
+    WINFLAG=1
+  else
+    WINFLAG=0
+  endif
+endif
+
+
+XSCOPE_HOST_DIR = $(ROOT)/sc_xscope_support/host_library
+
+INCLUDE += -I$(XSCOPE_HOST_DIR)
+
+SOURCES += $(XSCOPE_HOST_DIR)/xscope_host_shared.c $(APP_NAME).c
+ifeq ($(WINFLAG),1)
+  SOURCES += $(XSCOPE_HOST_DIR)/getopt.c $(XSCOPE_HOST_DIR)/inet_pton.c
+endif
+
+
+ifeq ($(WINFLAG),1)
+
+all:
+	cl $(FLAGS) $(INCLUDE) $(SOURCES)
+
+clean:
+	del $(APP_NAME)
+
+else
+
+all:
+	gcc $(FLAGS) $(INCLUDE) $(SOURCES) -o $(APP_NAME)
+
+clean:
+	rm -f $(APP_NAME)
+
+endif
