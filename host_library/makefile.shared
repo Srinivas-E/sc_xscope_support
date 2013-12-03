@@ -6,9 +6,15 @@ else
     WINFLAG=1
   else
     WINFLAG=0
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Linux)
+      LIBS += -lpthread
+    endif
+    ifeq ($(UNAME_S),Darwin)
+      LIBS +=
+    endif
   endif
 endif
-
 
 XSCOPE_HOST_DIR = $(ROOT)/sc_xscope_support/host_library
 
@@ -33,7 +39,7 @@ clean:
 else
 
 all:
-	gcc $(FLAGS) $(APP_NAME).c $(INCLUDES) $(SOURCES) -o $(APP_NAME)
+	gcc $(FLAGS) $(APP_NAME).c $(INCLUDES) $(SOURCES) -o $(APP_NAME) $(LIBS)
 
 clean:
 	rm -f $(APP_NAME)
