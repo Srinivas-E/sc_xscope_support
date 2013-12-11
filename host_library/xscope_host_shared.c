@@ -143,12 +143,14 @@ int xscope_ep_upload_pending = 0;
 int xscope_ep_request_upload(int sockfd, unsigned int length, const unsigned char *data)
 {
   char request = XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA;
-  char *requestBuffer = (char *)malloc(sizeof(char)+sizeof(int)+length);
+  char *requestBuffer = NULL;
   int requestBufIndex = 0;
   int n = 0;
 
   if (xscope_ep_upload_pending == 1)
     return XSCOPE_EP_FAILURE;
+
+  requestBuffer = (char *)malloc(sizeof(char)+sizeof(int)+length);
 
   requestBuffer[requestBufIndex] = request;
   requestBufIndex += 1;
