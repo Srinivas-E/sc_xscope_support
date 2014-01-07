@@ -20,7 +20,7 @@ XSCOPE_HOST_DIR = $(ROOT)/sc_xscope_support/host_library
 
 INCLUDES += -I$(XSCOPE_HOST_DIR)
 
-SOURCES += $(XSCOPE_HOST_DIR)/xscope_host_shared.c
+SOURCES += $(XSCOPE_HOST_DIR)/xscope_host_shared.c $(XSCOPE_HOST_DIR)/mutex.c $(XSCOPE_HOST_DIR)/queues.c
 ifeq ($(WINFLAG),1)
   SOURCES += $(XSCOPE_HOST_DIR)/getopt.c $(XSCOPE_HOST_DIR)/inet_pton.c
 endif

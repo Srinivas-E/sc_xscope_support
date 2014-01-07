@@ -1,4 +1,5 @@
 #include "xscope_host_shared.h"
+#include "queues.h"
 
 /*
  * Debug: Setting DEBUG to 1 will enable logging to 'run.log'.
@@ -113,6 +114,7 @@ int initialise_socket(char *ip_addr_str, char *port_str)
 
   printf(" - connected to ip: %s, port: %s\n",ip_addr_str, port_str);
 
+  allocate_socket_data(sockfd);
   return sockfd;
 }
 
@@ -138,32 +140,10 @@ void print_and_exit(const char* format, ...)
   exit(1);
 }
 
-int xscope_ep_upload_pending = 0;
-
 int xscope_ep_request_upload(int sockfd, unsigned int length, const unsigned char *data)
 {
-  char request = XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA;
-  char *requestBuffer = (char *)malloc(sizeof(char)+sizeof(int)+length);
-  int requestBufIndex = 0;
-  int n = 0;
-
-  if (xscope_ep_upload_pending == 1)
-    return XSCOPE_EP_FAILURE;
-
-  requestBuffer[requestBufIndex] = request;
-  requestBufIndex += 1;
-  *(unsigned int *)&requestBuffer[requestBufIndex] = length;
-  requestBufIndex += 4;
-  memcpy(&requestBuffer[requestBufIndex], data, length);
-  requestBufIndex += length;
-
-  n = send(sockfd, requestBuffer, requestBufIndex, 0);
-  if (n != requestBufIndex)
-    print_and_exit("ERROR: Command send failed\n");
-
-  xscope_ep_upload_pending = 1;
-  free(requestBuffer);
-
+  upload_queue_entry_t *entry = new_entry(length, data);
+  queue_add(sockfd, entry);
   return XSCOPE_EP_SUCCESS;
 }
 
@@ -318,7 +298,7 @@ void handle_sockets(int *sockfd, int no_of_sock)
             } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA) {
                 // The target acknowledges that it has received the message sent
                 if ((i + TARGET_DATA_EVENT_BYTES) <= n) {
-                  xscope_ep_upload_pending = 0;
+                  queue_complete_head(sockfd);
                   increment = TARGET_DATA_EVENT_BYTES;
                 }
 
