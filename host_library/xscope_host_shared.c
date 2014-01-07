@@ -17,7 +17,7 @@ FILE *g_log = NULL;
  */
 
 // Called whenever data is received from the target
-void hook_data_received(int xscope_probe, void *data, int data_len);
+void hook_data_received(int sockfd,int xscope_probe, void *data, int data_len);
 
 // Called whenever the application is existing
 void hook_exiting();
@@ -34,7 +34,7 @@ void hook_exiting();
 /*
  * Library code
  */
-int initialise_common(char *ip_addr_str, char *port_str)
+int initialise_socket(char *ip_addr_str, char *port_str)
 {
   int sockfd = 0;
   int n = 0;
@@ -98,7 +98,7 @@ int initialise_common(char *ip_addr_str, char *port_str)
 #endif
         connect_retries++;
       } else {
-        print_and_exit("\nERROR: Connect failed\n");
+        print_and_exit("\nERROR: Connect failed on ip: %s, port: %s\n",ip_addr_str, port_str);
       }
     } else {
       break;
@@ -111,7 +111,7 @@ int initialise_common(char *ip_addr_str, char *port_str)
   if (n != 1)
     print_and_exit("\nERROR: Command send failed\n");
 
-  printf(" - connected\n");
+  printf(" - connected to ip: %s, port: %s\n",ip_addr_str, port_str);
 
   return sockfd;
 }
@@ -143,14 +143,12 @@ int xscope_ep_upload_pending = 0;
 int xscope_ep_request_upload(int sockfd, unsigned int length, const unsigned char *data)
 {
   char request = XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA;
-  char *requestBuffer = NULL;
+  char *requestBuffer = (char *)malloc(sizeof(char)+sizeof(int)+length);
   int requestBufIndex = 0;
   int n = 0;
 
   if (xscope_ep_upload_pending == 1)
     return XSCOPE_EP_FAILURE;
-
-  requestBuffer = (char *)malloc(sizeof(char)+sizeof(int)+length);
 
   requestBuffer[requestBufIndex] = request;
   requestBufIndex += 1;
@@ -174,139 +172,177 @@ int xscope_ep_request_upload(int sockfd, unsigned int length, const unsigned cha
  * fact that full messages may not be received together and therefore needs
  * to keep the remainder of any message that hasn't been processed yet.
  */
-void handle_socket(int sockfd)
+void handle_sockets(int *sockfd, int no_of_sock)
 {
+
   int total_bytes = 0;
   int num_remaining_bytes = 0;
   unsigned char recv_buffer[MAX_RECV_BYTES];
-  int n = 0;
-
+  int i = 0,max_sockfd=0,activity=0,sock_fd=0,n=0;
+  
   // Keep track of whether a message should be printed at the start of the line
   // and when the prompt needs to be printed
   int new_line = 1;
-
-#ifdef _WIN32
-  while ((n = recv(sockfd, &recv_buffer[num_remaining_bytes], sizeof(recv_buffer) - num_remaining_bytes, MSG_PARTIAL)) > 0) {
-#else
-  while ((n = read(sockfd, &recv_buffer[num_remaining_bytes], sizeof(recv_buffer) - num_remaining_bytes)) > 0) {
+  
+  //set of socket descriptors
+  fd_set readfds;
+   
+  while(1)
+  { 
+#if 1 
+    // clear the socket set
+    FD_ZERO(&readfds);
 #endif
-    int i;
-
-    if (DEBUG)
-      fprintf(g_log, ">> Received %d", n);
-
-    n += num_remaining_bytes;
-    num_remaining_bytes = 0;
-    if (DEBUG) {
-      for (i = 0; i < n; i++) {
-        if ((i % 16) == 0)
-          fprintf(g_log, "\n");
-        fprintf(g_log, "%02x ", recv_buffer[i]);
-      }
-      fprintf(g_log, "\n");
+#if 1
+    // add sockets to set
+    for(i=0; i < no_of_sock; i++) {
+      // if valid socket descriptor then add to read list
+      if(sockfd[i] > 0)
+        FD_SET(sockfd[i],&readfds);
+      
+      // highest file descriptor number, need it for the select function
+      if(sockfd[i] > max_sockfd)
+        max_sockfd = sockfd[i];
     }
+#endif
+    // wait for an activity on one of the sockets, timeout is NULL, so wait indefinitely
+    activity = select(max_sockfd+1, &readfds, NULL, NULL, NULL);
 
-    for (i = 0; i < n; ) {
-      // Indicate when a block of data has been handled by the fact that the pointer can move on
-      int increment = 0;
+    if( (activity < 0) && (errno != EINTR) ) 
+      printf("select error\n");fflush(stdout);
+      
+    // If something happened on the socket
+    for(i = 0; i< no_of_sock; i++) {
+        
+      sock_fd = sockfd[i];
 
-      if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_PRINT) {
-        // Data to print to the screen has been received
-        unsigned int string_len = 0;
+      if(FD_ISSET(sock_fd, &readfds)) {
+        // read the incoming message
+#ifdef _WIN32
+        if((n = recv(sock_fd, &recv_buffer[num_remaining_bytes],sizeof(recv_buffer) - num_remaining_bytes, MSG_PARTIAL)) > 0) {
+#else               
+        if((n = read(sock_fd, &recv_buffer[num_remaining_bytes],sizeof(recv_buffer) - num_remaining_bytes)) > 0) {
+#endif          
+          int i;
+            
+          if (DEBUG)
+            fprintf(g_log, ">> Received %d", n);
+            
+          n += num_remaining_bytes;
+          num_remaining_bytes = 0;
+          if (DEBUG) {
+            for (i = 0; i < n; i++) {
+              if ((i % 16) == 0)
+                fprintf(g_log, "\n");
+              fprintf(g_log, "%02x ", recv_buffer[i]);
+            }
+            fprintf(g_log, "\n");
+          }
+            
+          for (i = 0; i < n; ) {
+            // Indicate when a block of data has been handled by the fact that the pointer can move on
+            int increment = 0;
 
-        // Need one byte for type, then 8 bytes of time stamp and 4 bytes of length
-        if ((i + PRINT_EVENT_BYTES) <= n) {
-          unsigned int string_len = EXTRACT_UINT(recv_buffer, i + 9);
+            if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_PRINT) {
+              // Data to print to the screen has been received
+              unsigned int string_len = 0;
 
-          int string_start = i + PRINT_EVENT_BYTES;
-          int string_end = i + PRINT_EVENT_BYTES + string_len;
+              // Need one byte for type, then 8 bytes of time stamp and 4 bytes of length
+              if ((i + PRINT_EVENT_BYTES) <= n) {
+                unsigned int string_len = EXTRACT_UINT(recv_buffer, i + 9);
 
-          // Ensure the buffer won't overflow (has to be after variable
-          // declaration for Windows c89 compile)
-          assert(string_len < MAX_RECV_BYTES);
+                int string_start = i + PRINT_EVENT_BYTES;
+                int string_end = i + PRINT_EVENT_BYTES + string_len;
 
-          if (string_end <= n) {
-            // Ensure the string is null-terminated - but remember the data byte
-            // in order to be able to restore it.
-            unsigned char tmp = recv_buffer[string_end];
-            recv_buffer[string_end] = '\0';
+                // Ensure the buffer won't overflow (has to be after variable
+                // declaration for Windows c89 compile)
+                assert(string_len < MAX_RECV_BYTES);
 
-            if (new_line && (g_prompt != NULL)) {
-              // When starting to print a message, emit a carriage return in order
-              // to overwrite the prompt
-              printf("\r");
-              new_line = 0;
+                if (string_end <= n) {
+                  // Ensure the string is null-terminated - but remember the data byte
+                  // in order to be able to restore it.
+                  unsigned char tmp = recv_buffer[string_end];
+                  recv_buffer[string_end] = '\0';
+
+                  if (new_line && (g_prompt != NULL)) {
+                    // When starting to print a message, emit a carriage return in order
+                    // to overwrite the prompt
+                    printf("\r");
+                    new_line = 0;
+                  }
+
+                  fwrite(&recv_buffer[string_start], sizeof(unsigned char), string_len, stdout);
+
+                  if (recv_buffer[string_end - 1] == '\n') {
+                    // When a string ends with a newline then print the prompt again
+                    if (g_prompt != NULL)
+                      printf("%s", g_prompt);
+
+                    new_line = 1;
+                  }
+
+                  // Because there is no newline character at the end of the prompt and there
+                  // may be none at the end of the string then we need to flush explicitly
+                  fflush(stdout);
+
+                  // Restore the end character
+                  recv_buffer[string_end] = tmp;
+
+                  increment = PRINT_EVENT_BYTES + string_len;
+                }  //(string_end <= n)
+              }    //((i + PRINT_EVENT_BYTES) <= n)
+
+            } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_DATA) {
+              // Data has been received, put it into the pcap file
+              if ((i + DATA_EVENT_HEADER_BYTES) <= n) {
+                int xscope_probe = recv_buffer[i+1];
+                int packet_len = EXTRACT_UINT(recv_buffer, i + 4);
+
+                // Fixed-length data packets are encoded with a length of 0
+                // but actually carry 8 bytes of data
+                if (packet_len == 0)
+                  packet_len = 8;
+
+                if ((i + packet_len + DATA_EVENT_BYTES) <= n) {
+                  // Data starts after the message header
+                  int data_start = i + DATA_EVENT_HEADER_BYTES;
+
+                  // An entire packet has been received - write it to the file
+                  total_bytes += packet_len;
+
+                  hook_data_received(sock_fd,xscope_probe, &recv_buffer[data_start], packet_len);
+                  increment = packet_len + DATA_EVENT_BYTES;
+                }
+              }
+
+            } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA) {
+                // The target acknowledges that it has received the message sent
+                if ((i + TARGET_DATA_EVENT_BYTES) <= n) {
+                  xscope_ep_upload_pending = 0;
+                  increment = TARGET_DATA_EVENT_BYTES;
+                }
+
+            } else {
+                print_and_exit("ERROR: Message format corrupted (received %u)\n", recv_buffer[i]);
             }
 
-            fwrite(&recv_buffer[string_start], sizeof(unsigned char), string_len, stdout);
+            if (increment) {
+              i += increment;
 
-            if (recv_buffer[string_end - 1] == '\n') {
-              // When a string ends with a newline then print the prompt again
-              if (g_prompt != NULL)
-                printf("%s", g_prompt);
+            } else {
+                // Only part of the packet received - store rest for next iteration
+                num_remaining_bytes = n - i;
+                memmove(recv_buffer, &recv_buffer[i], num_remaining_bytes);
 
-              new_line = 1;
+                if (DEBUG)
+                  fprintf(g_log, "%d remaining\n", num_remaining_bytes);
+
+                break;
             }
-
-            // Because there is no newline character at the end of the prompt and there
-            // may be none at the end of the string then we need to flush explicitly
-            fflush(stdout);
-
-            // Restore the end character
-            recv_buffer[string_end] = tmp;
-
-            increment = PRINT_EVENT_BYTES + string_len;
-          }
+          } 
         }
-
-      } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_DATA) {
-        // Data has been received, put it into the pcap file
-        if ((i + DATA_EVENT_HEADER_BYTES) <= n) {
-          int xscope_probe = recv_buffer[i+1];
-          int packet_len = EXTRACT_UINT(recv_buffer, i + 4);
-
-          // Fixed-length data packets are encoded with a length of 0
-          // but actually carry 8 bytes of data
-          if (packet_len == 0)
-            packet_len = 8;
-
-          if ((i + packet_len + DATA_EVENT_BYTES) <= n) {
-            // Data starts after the message header
-            int data_start = i + DATA_EVENT_HEADER_BYTES;
-
-            // An entire packet has been received - write it to the file
-            total_bytes += packet_len;
-
-            hook_data_received(xscope_probe, &recv_buffer[data_start], packet_len);
-            increment = packet_len + DATA_EVENT_BYTES;
-          }
-        }
-
-      } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA) {
-        // The target acknowledges that it has received the message sent
-        if ((i + TARGET_DATA_EVENT_BYTES) <= n) {
-          xscope_ep_upload_pending = 0;
-          increment = TARGET_DATA_EVENT_BYTES;
-        }
-
-      } else {
-        print_and_exit("ERROR: Message format corrupted (received %u)\n", recv_buffer[i]);
       }
-
-      if (increment) {
-        i += increment;
-
-      } else {
-        // Only part of the packet received - store rest for next iteration
-        num_remaining_bytes = n - i;
-        memmove(recv_buffer, &recv_buffer[i], num_remaining_bytes);
-
-        if (DEBUG)
-          fprintf(g_log, "%d remaining\n", num_remaining_bytes);
-
-        break;
-      }
-    }
-  }
+    }  
+  } //while(1)
 }
 
