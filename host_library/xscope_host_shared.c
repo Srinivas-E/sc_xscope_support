@@ -192,7 +192,11 @@ void handle_sockets(int *sockfds, int no_of_sock)
     // wait for an activity on one of the sockets, timeout is NULL, so wait indefinitely
     activity = select(max_sockfd + 1, &readfds, NULL, NULL, NULL);
 
+#ifdef _WIN32
+    if ((activity < 0) && (WSAGetLastError() != WSAEINTR)) {
+#else
     if ((activity < 0) && (errno != EINTR)) {
+#endif
       printf("select error\n");
       fflush(stdout);
     }

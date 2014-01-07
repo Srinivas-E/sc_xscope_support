@@ -47,6 +47,7 @@ socket_data_t *get_socket_data(int sockfd)
   }
   // Failed to allocate the entry for this socket
   assert(0);
+  return NULL;
 }
 
 upload_queue_entry_t *new_entry(unsigned int length, const unsigned char *data)
