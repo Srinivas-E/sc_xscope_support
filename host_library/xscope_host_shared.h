@@ -69,8 +69,7 @@
 #define EXTRACT_UINT(buf, pos) (buf[pos] | (buf[pos+1] << 8) | (buf[pos+2] << 16) | (buf[pos+3] << 24))
 
 #define DEFAULT_SERVER_IP "127.0.0.1"
-#define DEFAULT_PORT_0 "12346"
-#define DEFAULT_PORT_1 "12347"
+#define DEFAULT_PORT "12346"
 
 #ifdef __XC__
 extern "C" {
