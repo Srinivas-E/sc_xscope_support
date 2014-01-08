@@ -331,7 +331,7 @@ void handle_sockets(int *sockfds, int no_of_sock)
                 break;
 
             case XTRACE_SOCKET_MSG_EVENT_REGISTER: {
-              int id = EXTRACT_UINT(recv_buffer, 1);
+              int id = EXTRACT_UINT(recv_buffer, i + 1);
               // Point to start of name_strlen
               int len = i + REGISTER_EVENT_HEADER_BYTES - 4;
               EXTRACT_LEN_PLUS_STR(name);
