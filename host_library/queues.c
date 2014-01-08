@@ -56,7 +56,7 @@ upload_queue_entry_t *new_entry(unsigned int length, const unsigned char *data)
   upload_queue_entry_t *entry = malloc(sizeof(upload_queue_entry_t));
   entry->data = (unsigned char *)malloc(sizeof(char)+sizeof(int)+length);
 
-  entry->data[index] = XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA;
+  entry->data[index] = XTRACE_SOCKET_MSG_EVENT_TARGET_DATA;
   index += 1;
   *(unsigned int *)&(entry->data[index]) = length;
   index += 4;

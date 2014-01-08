@@ -17,6 +17,9 @@ FILE *g_log = NULL;
  * HOOKS: The application needs to implement the following hooks
  */
 
+// Called with the registartions so that the app can map name->probe
+void hook_registration_received(int sockfd, int xscope_probe, char *name);
+
 // Called whenever data is received from the target
 void hook_data_received(int sockfd, int xscope_probe, void *data, int data_len);
 
@@ -107,7 +110,9 @@ int initialise_socket(char *ip_addr_str, char *port_str)
   }
 
   // Send the command to request which event types to receive
-  command_buffer[0] = XSCOPE_SOCKET_MSG_EVENT_DATA | XSCOPE_SOCKET_MSG_EVENT_PRINT;
+  command_buffer[0] = XTRACE_SOCKET_MSG_EVENT_RECORD |
+                      XTRACE_SOCKET_MSG_EVENT_PRINT  |
+                      XTRACE_SOCKET_MSG_EVENT_REGISTER;
   n = send(sockfd, command_buffer, 1, 0);
   if (n != 1)
     print_and_exit("\nERROR: Command send failed\n");
@@ -146,6 +151,15 @@ int xscope_ep_request_upload(int sockfd, unsigned int length, const unsigned cha
   queue_add(sockfd, entry);
   return XSCOPE_EP_SUCCESS;
 }
+
+#define EXTRACT_LEN_PLUS_STR(v)                    \
+  if ((len + 4) > n)                               \
+    break;                                         \
+  int v##_strlen = EXTRACT_UINT(recv_buffer, len); \
+  char *v = (char *)&recv_buffer[len + 4];         \
+  len += 4 + v##_strlen;                           \
+  if (len > n)                                     \
+    break;                                         \
 
 /*
  * Function to handle all data being received on the socket. It handles the
@@ -234,7 +248,9 @@ void handle_sockets(int *sockfds, int no_of_sock)
             // Indicate when a block of data has been handled by the fact that the pointer can move on
             int increment = 0;
 
-            if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_PRINT) {
+            switch (recv_buffer[i]) {
+
+            case XTRACE_SOCKET_MSG_EVENT_PRINT: {
               // Data to print to the screen has been received
               unsigned int string_len = 0;
 
@@ -282,8 +298,10 @@ void handle_sockets(int *sockfds, int no_of_sock)
                   increment = PRINT_EVENT_BYTES + string_len;
                 }  //(string_end <= n)
               }    //((i + PRINT_EVENT_BYTES) <= n)
+              break;
+            }
 
-            } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_DATA) {
+            case XTRACE_SOCKET_MSG_EVENT_RECORD:
               // Data has been received, put it into the pcap file
               if ((i + DATA_EVENT_HEADER_BYTES) <= n) {
                 int xscope_probe = recv_buffer[i+1];
@@ -302,17 +320,40 @@ void handle_sockets(int *sockfds, int no_of_sock)
                   increment = packet_len + DATA_EVENT_BYTES;
                 }
               }
+              break;
 
-            } else if (recv_buffer[i] == XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA) {
+            case XTRACE_SOCKET_MSG_EVENT_TARGET_DATA:
                 // The target acknowledges that it has received the message sent
                 if ((i + TARGET_DATA_EVENT_BYTES) <= n) {
                   queue_complete_head(sockfd);
                   increment = TARGET_DATA_EVENT_BYTES;
                 }
+                break;
 
-            } else {
-                print_and_exit("ERROR: Message format corrupted (received %u)\n", recv_buffer[i]);
+            case XTRACE_SOCKET_MSG_EVENT_REGISTER: {
+              int id = EXTRACT_UINT(recv_buffer, 1);
+              // Point to start of name_strlen
+              int len = i + REGISTER_EVENT_HEADER_BYTES - 4;
+              EXTRACT_LEN_PLUS_STR(name);
+              EXTRACT_LEN_PLUS_STR(ps);
+
+              if ((len + 4) > n)
+                break; // Not enough data for user_type
+              int user_type = EXTRACT_UINT(recv_buffer, len);
+              len += 4;
+
+              EXTRACT_LEN_PLUS_STR(user_name);
+
+              hook_registration_received(sockfd, id, name);
+
+              increment = len;
+              break;
             }
+
+            default:
+                print_and_exit("ERROR: Message format corrupted (received %u)\n", recv_buffer[i]);
+
+            } // switch
 
             if (increment) {
               i += increment;

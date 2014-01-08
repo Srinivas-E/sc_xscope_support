@@ -48,19 +48,28 @@
 #define XSCOPE_EP_FAILURE 1
 
 // Different event types to register and handle
-#define XSCOPE_SOCKET_MSG_EVENT_DATA  0x2
-#define XSCOPE_SOCKET_MSG_EVENT_TARGET_DATA 4
-#define XSCOPE_SOCKET_MSG_EVENT_PRINT 0x8
+#define XTRACE_SOCKET_MSG_EVENT_REGISTER    0x1
+#define XTRACE_SOCKET_MSG_EVENT_RECORD      0x2
+#define XTRACE_SOCKET_MSG_EVENT_TARGET_DATA 0x4
+#define XTRACE_SOCKET_MSG_EVENT_PRINT       0x8
 
 // Need one byte for type, then 8 bytes of time stamp and 4 bytes of length
 #define PRINT_EVENT_BYTES 13
 
-// Data events have 16 bytes of overhead (event type, id, flag[2], length[4], timestamp[8])
-#define DATA_EVENT_HEADER_BYTES 8
+// Data events have 16 bytes of overhead (type[1], id[1], flag[2], length[4], timestamp[8])
 #define DATA_EVENT_BYTES 16
+// And 8 bytes before the length can be read
+#define DATA_EVENT_HEADER_BYTES 8
 
-// The target completion message is the event type + data[4]
+// The target completion message is (type[1], data[4])
 #define TARGET_DATA_EVENT_BYTES 5
+
+// Registration events have the form: (type[1], id[4], type[4], r[4], g[4], b[4],
+//                                     strlen(name)[4], name[N],
+//                                     strlen("ps")[4], "ps"[3],
+//                                     user_type,
+//                                     strlen(user_name)[4], user_name[N])
+#define REGISTER_EVENT_HEADER_BYTES 25
 
 #define MAX_RECV_BYTES 16384
 
